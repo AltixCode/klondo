@@ -5,10 +5,12 @@ import { Alert, Linking, Pressable, View } from 'react-native';
 
 import { BannerAdSlot } from '@/components/BannerAdSlot';
 import { Screen, Text } from '@/components/ui';
-import { t } from '@/i18n';
+import { t, type TranslationKey } from "@/i18n";
 import { showPrivacyOptionsForm } from '@/monetization/ads';
 import { PRIVACY_POLICY_URL, SUPPORT_EMAIL, TERMS_URL } from '@/monetization/config';
 import { useAdsConsentStore } from '@/store/useAdsConsentStore';
+import { useTableStore } from "@/store/useTableStore";
+import { TABLE_THEME_NAMES, tableTheme } from "@/theme/table";
 import { usePremiumStore } from '@/store/usePremiumStore';
 import { useTheme, type ThemePreference } from '@/theme';
 
@@ -58,9 +60,18 @@ function Row({ label, detail, onPress }: { label: string; detail?: string; onPre
   );
 }
 
+const TABLE_LABEL: Record<string, TranslationKey> = {
+  default: "themeDefault",
+  slate: "themeSlate",
+  wine: "themeWine",
+  sand: "themeSand",
+};
+
 export default function Settings() {
   const router = useRouter();
   const { colors, spacing, radius, preference, setPreference } = useTheme();
+  const tableName = useTableStore((s) => s.theme);
+  const setTableTheme = useTableStore((s) => s.setTheme);
   const isPremium = usePremiumStore((s) => s.isPremium);
   const restore = usePremiumStore((s) => s.restore);
   const offerPrivacyOptions = useAdsConsentStore((s) => s.consent.offerPrivacyOptions);
@@ -110,6 +121,53 @@ export default function Settings() {
               >
                 <Text variant="callout" tone={selected ? 'default' : 'muted'}>
                   {t(option.label)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <SectionLabel>{t("tableThemeTitle")}</SectionLabel>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.sm }}>
+          {TABLE_THEME_NAMES.map((name) => {
+            const selected = tableName === name;
+            // Locked themes are shown, not hidden: nobody buys what they cannot see.
+            const locked = !isPremium && name !== "default";
+            const swatch = tableTheme(name);
+            return (
+              <Pressable
+                key={name}
+                accessibilityRole="radio"
+                accessibilityLabel={
+                  locked ? `${t(TABLE_LABEL[name]!)} — ${t("lockedTitle")}` : t(TABLE_LABEL[name]!)
+                }
+                accessibilityState={{ selected }}
+                onPress={() => (locked ? router.push("/paywall") : setTableTheme(name, isPremium))}
+                style={{
+                  minHeight: 44,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: spacing.sm,
+                  paddingHorizontal: spacing.base,
+                  borderRadius: radius.full,
+                  backgroundColor: colors.surfaceAlt,
+                  borderWidth: selected ? 2 : 1,
+                  borderColor: selected ? colors.accent : colors.border,
+                  opacity: locked ? 0.6 : 1,
+                }}
+              >
+                <View
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: radius.sm,
+                    backgroundColor: swatch.felt,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  }}
+                />
+                <Text variant="callout" tone={selected ? "default" : "muted"}>
+                  {t(TABLE_LABEL[name]!)}
                 </Text>
               </Pressable>
             );
