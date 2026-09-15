@@ -153,7 +153,6 @@ export default function Settings() {
                   backgroundColor: colors.surfaceAlt,
                   borderWidth: selected ? 2 : 1,
                   borderColor: selected ? colors.accent : colors.border,
-                  opacity: locked ? 0.6 : 1,
                 }}
               >
                 <View
