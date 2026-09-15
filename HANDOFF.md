@@ -36,14 +36,17 @@ something, because CI is where the values are.
 | App Store Connect record | ✅ | `6812380911` — store name "Klondo Solitaire" |
 | App Store category | ✅ | GAMES / ENTERTAINMENT |
 | Reviewer contact and notes | ✅ | set 2026-09-15, notes written for this app |
-| App Store availability (territories) | ⬜ | not set |
-| iOS IAP created and priced | ⬜ | not created |
-| Play Console app | ⬜ | blocked — console create returns a generic error, raised with the owner |
+| App Store availability (territories) | ✅ | all 175 territories |
+| iOS IAP created and priced | ✅ | remove-ads non-consumable, $3.99, localised |
+| Play Console app | ⛔ | blocked: account quota, `429 RESOURCE_EXHAUSTED` at 15 apps; support request filed |
 | AdMob app — iOS | ✅ | `ca-app-pub-2504845459806550~5653017970` |
 | AdMob app — Android | ✅ | `ca-app-pub-2504845459806550~7414665513` |
 | AdMob ad units (6) | ✅ | iOS banner/interstitial/rewarded `6423174161` / `1330629582` / `1208349812`; Android `4528647725` / `2316408199` / `9017547918` |
 | AdMob ids wired into CI | ✅ | all ten secrets present on the repo |
 | AdMob GDPR + US-states messages published | ✅ | published account-wide, covers every app |
+| App Store content rights declaration | ✅ | DOES_NOT_USE_THIRD_PARTY_CONTENT |
+| App Store listing copy | ✅ | description, keywords and promotional text, written for this app |
+| App Store screenshots | ❌ | **none** — needs the app running on hardware |
 | RevenueCat project, apps, entitlement, offering | ✅ | project `proj57d25c58`, entitlement `entl9d3a1c105c`, offering `ofrng414f7dafd5` |
 | RevenueCat In-App Purchase Key | ❌ | missing account-wide — see below |
 
@@ -59,5 +62,7 @@ something, because CI is where the values are.
   Without it StoreKit 2 validation is degraded, which shows up as a purchase
   that succeeds on device and never grants the entitlement — the user pays and
   the ads stay. Being handled by dev-3a.
-- The iOS record still needs territories, an IAP and a build before it can be
-  submitted.
+- **The iOS record now needs only two things: a build, and screenshots.**
+  Both require the app running on real hardware, which is also what keeps
+  the IAP at MISSING_METADATA — its review screenshot must show the real
+  paywall. Everything else on the App Store side is done.
