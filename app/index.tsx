@@ -149,7 +149,13 @@ export default function Table() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <Screen scroll>
+      {/* topInset here too, not only on the loading branch above.
+          This route sets headerShown:false, so nothing pays the notch. The
+          inset was added to the `if (!game)` branch -- a screen that shows for
+          a fraction of a second -- and not to the game itself, which is the
+          one anybody sees. Klondo's live App Store screenshot has "Klondo /
+          1 moves" sliced in half by the status bar because of it. */}
+      <Screen scroll topInset>
         <View style={styles.titleRow}>
           <View style={{ flex: 1 }}>
             <Text variant="display">{t("appName")}</Text>
