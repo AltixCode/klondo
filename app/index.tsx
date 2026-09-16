@@ -134,7 +134,10 @@ export default function Table() {
   if (!game) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <Screen>
+        {/* topInset, because this route sets headerShown:false -- with no
+          navigation header above it, nothing else pays the notch, and the
+          title renders underneath the status bar. */}
+      <Screen topInset>
           <Text variant="display">{t("appName")}</Text>
         </Screen>
         <BannerAdSlot />
