@@ -70,8 +70,15 @@ export default function Table() {
   const felt = tableTheme(themeName);
 
   // Seven columns plus gutters. The card height is the usual 1.4 ratio.
+  //
+  // The cap lifts on a tablet for the same reason Worddrop's keyboard cap did:
+  // at a flat `Math.min(width, 520)` the tableau draws at its phone size on a
+  // 1032pt iPad, so seven 61pt cards sit in the middle of a 13" screen with
+  // half the width unused. Points are density independent -- the cards were
+  // never shrinking, the screen around them was growing.
+  const isTablet = width >= 700;
   const cardW = Math.floor(
-    (Math.min(width, 520) - spacing.xl * 2 - spacing.xs * 6) / 7,
+    (Math.min(width, isTablet ? 820 : 520) - spacing.xl * 2 - spacing.xs * 6) / 7,
   );
   const cardH = Math.round(cardW * 1.4);
   const fan = Math.round(cardH * 0.28);
@@ -134,7 +141,10 @@ export default function Table() {
   if (!game) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <Screen>
+        {/* topInset, because this route sets headerShown:false -- with no
+          navigation header above it, nothing else pays the notch, and the
+          title renders underneath the status bar. */}
+      <Screen topInset>
           <Text variant="display">{t("appName")}</Text>
         </Screen>
         <BannerAdSlot />
@@ -146,7 +156,13 @@ export default function Table() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <Screen scroll>
+      {/* topInset here too, not only on the loading branch above.
+          This route sets headerShown:false, so nothing pays the notch. The
+          inset was added to the `if (!game)` branch -- a screen that shows for
+          a fraction of a second -- and not to the game itself, which is the
+          one anybody sees. Klondo's live App Store screenshot has "Klondo /
+          1 moves" sliced in half by the status bar because of it. */}
+      <Screen scroll topInset>
         <View style={styles.titleRow}>
           <View style={{ flex: 1 }}>
             <Text variant="display">{t("appName")}</Text>
