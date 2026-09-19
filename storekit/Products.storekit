@@ -1,0 +1,35 @@
+{
+  "identifier": "4AAA73DF-5F7F-4631-BB7C-0AB9C86BDD39",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "4.99",
+      "familyShareable": false,
+      "internalID": "57B45F28-237E-43BD-A1DB-2CB6F730F3DF",
+      "localizations": [
+        {
+          "description": "klondo remove ads lifetime unlock",
+          "displayName": "klondo remove ads",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.altixcode.klondo.removeads",
+      "referenceName": "klondo remove ads",
+      "type": "NonConsumable"
+    }
+  ],
+  "settings": {
+    "_applicationInternalID": "",
+    "_developerTeamID": "",
+    "_failTransactionsEnabled": false,
+    "_lastSynchronizedDate": 0,
+    "_locale": "en_US",
+    "_storefront": "USA",
+    "_storeKitErrors": []
+  },
+  "subscriptionGroups": [],
+  "version": {
+    "major": 4,
+    "minor": 0
+  }
+}
