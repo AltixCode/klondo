@@ -19,7 +19,7 @@ import { BannerAdSlot } from "@/components/BannerAdSlot";
 import { CardView, rankLabel } from "@/components/CardView";
 import { Button, Screen, Text } from "@/components/ui";
 import { t, type TranslationKey } from "@/i18n";
-import { SUITS, type Card, type Suit, hasWon } from "@/logic/klondike";
+import { SUITS, type Card, type Suit, hasWon, canStackOnFoundation } from "@/logic/klondike";
 import { dateKey } from "@/logic/daily";
 import { FREE_HINTS, FREE_UNDO, useTableStore } from "@/store/useTableStore";
 import { usePremiumStore } from "@/store/usePremiumStore";
@@ -87,12 +87,47 @@ export default function Table() {
     if (!game) startDay(dateKey(today), today, isPremium);
   }, [game, startDay, today, isPremium]);
 
+  const doNewGame = useCallback(() => {
+    announced.current = false;
+    setSelected(null);
+    startDay(dateKey(new Date()), new Date(), isPremium);
+  }, [startDay, isPremium]);
+
   useEffect(() => {
     if (!game || announced.current || !hasWon(game)) return;
     announced.current = true;
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert(t("wonTitle"), t("wonBody", { moves: String(moves) }));
-  }, [game, moves]);
+    Alert.alert(
+      t("wonTitle"),
+      t("wonBody", { moves: String(moves) }),
+      [
+        {
+          text: t("playAgainCta"),
+          onPress: doNewGame,
+        },
+      ],
+    );
+  }, [game, moves, doNewGame]);
+
+  // When all cards in stock & waste are cleared, and all tableau cards are face up,
+  // automatically sort remaining cards to foundations one by one until completed.
+  useEffect(() => {
+    if (!game || hasWon(game)) return;
+    if (game.stock.length === 0 && game.waste.length === 0) {
+      const allFaceUp = game.tableau.every((col) => col.every((c) => c.faceUp));
+      if (allFaceUp) {
+        for (let col = 0; col < game.tableau.length; col++) {
+          const top = game.tableau[col]?.at(-1);
+          if (top && canStackOnFoundation(top, game.foundations[top.suit])) {
+            const timer = setTimeout(() => {
+              toFoundation({ from: "tableau", column: col });
+            }, 80);
+            return () => clearTimeout(timer);
+          }
+        }
+      }
+    }
+  }, [game, toFoundation]);
 
   const offerUnlock = useCallback(() => {
     Alert.alert(t("limitTitle"), t("unlockBody"), [
@@ -101,24 +136,75 @@ export default function Table() {
     ]);
   }, [router]);
 
+  const lastTapRef = useRef<{ time: number; key: string }>({ time: 0, key: "" });
+
+  const tryAutoMoveToFoundation = useCallback(
+    (source: { from: "waste" } | { from: "tableau"; column: number }) => {
+      if (!game) return false;
+      const card =
+        source.from === "waste"
+          ? game.waste.at(-1)
+          : game.tableau[source.column]?.at(-1);
+      if (!card || !card.faceUp) return false;
+      if (canStackOnFoundation(card, game.foundations[card.suit])) {
+        toFoundation(source);
+        setSelected(null);
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        return true;
+      }
+      return false;
+    },
+    [game, toFoundation],
+  );
+
   const tapColumn = useCallback(
     (column: number, index: number) => {
       if (!game) return;
       const cards = game.tableau[column] ?? [];
+      const card = cards[index];
+
       // Second tap: this column is the destination.
       if (selected) {
-        if (selected.kind === "waste") wasteToTableau(column);
-        else if (selected.column !== column)
+        if (selected.kind === "waste") {
+          wasteToTableau(column);
+          setSelected(null);
+          void Haptics.selectionAsync();
+          return;
+        }
+        if (selected.column !== column) {
           moveRun(selected.column, column, selected.index);
+          setSelected(null);
+          void Haptics.selectionAsync();
+          return;
+        }
+        // Same column and index: tap again on selected top card sends to foundation if valid!
+        if (selected.index === index && index === cards.length - 1) {
+          if (tryAutoMoveToFoundation({ from: "tableau", column })) {
+            return;
+          }
+        }
         setSelected(null);
-        void Haptics.selectionAsync();
         return;
       }
-      const card = cards[index];
+
       if (!card?.faceUp) return;
+
+      // Check double tap or Ace if it's the top card:
+      if (index === cards.length - 1) {
+        const now = Date.now();
+        const key = `col:${column}:${index}`;
+        const isDoubleTap = now - lastTapRef.current.time < 350 && lastTapRef.current.key === key;
+        lastTapRef.current = { time: now, key };
+        if (isDoubleTap || card.rank === 1) {
+          if (tryAutoMoveToFoundation({ from: "tableau", column })) {
+            return;
+          }
+        }
+      }
+
       setSelected({ kind: "tableau", column, index });
     },
-    [game, selected, moveRun, wasteToTableau],
+    [game, selected, moveRun, wasteToTableau, tryAutoMoveToFoundation],
   );
 
   const doUndo = useCallback(() => {
@@ -163,7 +249,7 @@ export default function Table() {
           one anybody sees. Klondo's live App Store screenshot has "Klondo /
           1 moves" sliced in half by the status bar because of it. */}
       <Screen scroll topInset>
-        <View style={styles.titleRow}>
+        <View style={[styles.titleRow, { marginTop: spacing.xs }]}>
           <View style={{ flex: 1 }}>
             <Text variant="display">{t("appName")}</Text>
             <Text variant="caption" tone="muted">
@@ -211,7 +297,21 @@ export default function Table() {
                   ? t("wasteLabel", { card: describe(wasteTop) })
                   : t("wasteEmpty")
               }
-              onPress={() => wasteTop && setSelected({ kind: "waste" })}
+              onPress={() => {
+                if (!wasteTop) return;
+                const now = Date.now();
+                const key = "waste";
+                const isDoubleTap =
+                  now - lastTapRef.current.time < 350 &&
+                  lastTapRef.current.key === key;
+                lastTapRef.current = { time: now, key };
+                if (isDoubleTap || wasteTop.rank === 1) {
+                  if (tryAutoMoveToFoundation({ from: "waste" })) {
+                    return;
+                  }
+                }
+                setSelected({ kind: "waste" });
+              }}
             >
               <CardView
                 card={wasteTop ?? null}
@@ -242,11 +342,18 @@ export default function Table() {
                   }
                   onPress={() => {
                     if (!selected) return;
-                    toFoundation(
+                    const selectedCard =
                       selected.kind === "waste"
-                        ? { from: "waste" }
-                        : { from: "tableau", column: selected.column },
-                    );
+                        ? game.waste.at(-1)
+                        : game.tableau[selected.column]?.at(selected.index);
+                    if (selectedCard && selectedCard.suit === suit) {
+                      toFoundation(
+                        selected.kind === "waste"
+                          ? { from: "waste" }
+                          : { from: "tableau", column: selected.column },
+                      );
+                      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }
                     setSelected(null);
                   }}
                 >
@@ -366,13 +473,20 @@ export default function Table() {
           />
         </View>
 
-        <Button
-          label={t("settingsTitle")}
-          variant="ghost"
-          fullWidth
-          onPress={() => router.push("/settings")}
-          style={{ marginTop: spacing.md }}
-        />
+        <View style={[styles.row, { gap: spacing.sm, marginTop: spacing.md }]}>
+          <Button
+            label={t("playAgainCta")}
+            variant="secondary"
+            onPress={doNewGame}
+            style={{ flex: 1 }}
+          />
+          <Button
+            label={t("settingsTitle")}
+            variant="ghost"
+            onPress={() => router.push("/settings")}
+            style={{ flex: 1 }}
+          />
+        </View>
       </Screen>
       <BannerAdSlot />
     </View>

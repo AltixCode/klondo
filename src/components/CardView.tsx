@@ -87,12 +87,40 @@ export function CardView({
           backgroundColor: theme.back,
           borderWidth: 1,
           borderColor: theme.slot,
+          padding: 3,
+          alignItems: "center",
+          justifyContent: "center",
         }}
-      />
+      >
+        <View
+          style={{
+            width: "100%",
+            height: "100%",
+            borderRadius: Math.max(2, radius.sm - 2),
+            borderWidth: 1,
+            borderColor: theme.slot,
+            borderStyle: "dashed",
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: 0.6,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: Math.min(width * 0.35, height * 0.3),
+              color: theme.slot,
+              opacity: 0.7,
+            }}
+          >
+            ✦
+          </Text>
+        </View>
+      </View>
     );
   }
 
   const ink = colourOf(card.suit) === "red" ? theme.red : theme.black;
+  const isFaceCard = card.rank >= 11;
   return (
     <View
       style={{
@@ -104,16 +132,82 @@ export function CardView({
         borderColor: selected ? colors.accent : theme.slot,
         paddingHorizontal: 4,
         paddingTop: 2,
+        overflow: "hidden",
       }}
     >
-      <Text
-        variant="caption"
-        color={ink}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-      >
-        {`${rankLabel(card.rank)}${suitGlyph(card.suit)}`}
-      </Text>
+      <View style={{ flexDirection: "row", alignItems: "center" }}>
+        <Text
+          variant="caption"
+          color={ink}
+          numberOfLines={1}
+          style={{
+            fontWeight: "700",
+            fontSize: Math.max(10, Math.floor(width * 0.28)),
+          }}
+        >
+          {rankLabel(card.rank)}
+        </Text>
+        <Text
+          variant="caption"
+          color={ink}
+          numberOfLines={1}
+          style={{
+            fontSize: Math.max(9, Math.floor(width * 0.24)),
+            marginLeft: 1,
+          }}
+        >
+          {suitGlyph(card.suit)}
+        </Text>
+      </View>
+
+      {height >= 44 ? (
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+          pointerEvents="none"
+        >
+          <Text
+            style={{
+              fontSize: Math.min(width * 0.52, height * 0.42),
+              color: ink,
+              opacity: isFaceCard ? 0.22 : 0.15,
+              fontWeight: isFaceCard ? "800" : "400",
+            }}
+          >
+            {isFaceCard ? rankLabel(card.rank) : suitGlyph(card.suit)}
+          </Text>
+        </View>
+      ) : null}
+
+      {height >= 56 ? (
+        <View
+          style={{
+            position: "absolute",
+            right: 4,
+            bottom: 2,
+            transform: [{ rotate: "180deg" }],
+          }}
+          pointerEvents="none"
+        >
+          <Text
+            variant="micro"
+            color={ink}
+            style={{
+              fontSize: Math.max(8, Math.floor(width * 0.22)),
+              opacity: 0.85,
+            }}
+          >
+            {`${rankLabel(card.rank)}${suitGlyph(card.suit)}`}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
