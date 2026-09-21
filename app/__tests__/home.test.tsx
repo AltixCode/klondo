@@ -127,4 +127,37 @@ describe("the table", () => {
     const wonCalls = alert.mock.calls.filter((c) => c[0] === t("wonTitle"));
     expect(wonCalls.length).toBeGreaterThanOrEqual(1);
   });
+
+  it("handles hint button presses", async () => {
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    const { getByText } = await renderWithProviders(<Home />);
+    await fireEvent.press(getByText(t("hintLeft", { n: "3" })));
+    expect(alert).not.toHaveBeenCalledWith(t("limitTitle"));
+  });
+
+  it("auto-moves Ace to foundation on tap", async () => {
+    await renderWithProviders(<Home />);
+    useTableStore.setState({
+      game: {
+        stock: [],
+        waste: [{ rank: 1, suit: "hearts", faceUp: true }],
+        foundations: { hearts: [], diamonds: [], clubs: [], spades: [] },
+        tableau: [
+          [{ rank: 1, suit: "spades", faceUp: true }],
+          [], [], [], [], [], []
+        ],
+      },
+      moves: 5,
+    });
+    const { getByLabelText, getByText } = await renderWithProviders(<Home />);
+    const aceHeart = getByLabelText(
+      t("wasteLabel", { card: `A ${t("hearts")}` }),
+    );
+    await fireEvent.press(aceHeart);
+    expect(useTableStore.getState().game!.foundations.hearts).toHaveLength(1);
+
+    // Also test "Play another game" button
+    await fireEvent.press(getByText(t("playAgainCta")));
+    expect(useTableStore.getState().game).toBeTruthy();
+  });
 });
