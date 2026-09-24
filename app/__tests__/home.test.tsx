@@ -144,14 +144,19 @@ describe("the table", () => {
         foundations: { hearts: [], diamonds: [], clubs: [], spades: [] },
         tableau: [
           [{ rank: 1, suit: "spades", faceUp: true }],
-          [], [], [], [], [], []
+          [],
+          [],
+          [],
+          [],
+          [],
+          [],
         ],
       },
       moves: 5,
     });
     const { getByLabelText, getByText } = await renderWithProviders(<Home />);
     const aceHeart = getByLabelText(
-      t("wasteLabel", { card: `A ${t("hearts")}` }),
+      t("wasteLabel", { card: `A ${t("suitHearts")}` }),
     );
     await fireEvent.press(aceHeart);
     expect(useTableStore.getState().game!.foundations.hearts).toHaveLength(1);
