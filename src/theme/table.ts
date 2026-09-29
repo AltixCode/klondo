@@ -23,13 +23,57 @@ export interface TableTheme {
   black: string;
   /** An empty column or foundation slot. */
   slot: string;
+  /**
+   * The border of a selected card.
+   *
+   * Its own token rather than the app's `colors.accent`: `accent` is tuned against the app's
+   * dark/light *background*, not a table theme's `face`, which is always a near-white card
+   * regardless of system appearance. In dark mode `accent` is `#6EE7B7` -- a light mint -- and
+   * against a white card face that measures ~1.5:1, well under the 3:1 a UI outline needs to
+   * read as present at all. A tester called this out directly: "hard to distinguish". `highlight`
+   * is picked per theme so a selected card is unmistakable against that theme's own face colour,
+   * independent of which system appearance drew it.
+   */
+  highlight: string;
 }
 
 export const TABLE_THEMES: Record<string, TableTheme> = {
-  default: { felt: '#0F5132', back: '#4B617F', face: '#FFFFFF', red: '#B3261E', black: '#1B1B1F', slot: '#0B3D26' },
-  slate: { felt: '#2B3440', back: '#3F4A5A', face: '#F8FAFC', red: '#B42318', black: '#0F172A', slot: '#232B35' },
-  wine: { felt: '#4A1220', back: '#71273A', face: '#FFF8F8', red: '#A4161A', black: '#1A1113', slot: '#3A0E19' },
-  sand: { felt: '#8A6D3B', back: '#6B5228', face: '#FFFDF5', red: '#A03A1E', black: '#2A2113', slot: '#705731' },
+  default: {
+    felt: "#0F5132",
+    back: "#4B617F",
+    face: "#FFFFFF",
+    red: "#B3261E",
+    black: "#1B1B1F",
+    slot: "#0B3D26",
+    highlight: "#1D4ED8",
+  },
+  slate: {
+    felt: "#2B3440",
+    back: "#3F4A5A",
+    face: "#F8FAFC",
+    red: "#B42318",
+    black: "#0F172A",
+    slot: "#232B35",
+    highlight: "#1D4ED8",
+  },
+  wine: {
+    felt: "#4A1220",
+    back: "#71273A",
+    face: "#FFF8F8",
+    red: "#A4161A",
+    black: "#1A1113",
+    slot: "#3A0E19",
+    highlight: "#1D4ED8",
+  },
+  sand: {
+    felt: "#8A6D3B",
+    back: "#6B5228",
+    face: "#FFFDF5",
+    red: "#A03A1E",
+    black: "#2A2113",
+    slot: "#705731",
+    highlight: "#1D4ED8",
+  },
 };
 
 export const TABLE_THEME_NAMES = Object.keys(TABLE_THEMES);

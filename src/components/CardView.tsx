@@ -59,7 +59,7 @@ export function CardView({
   selected,
   slot,
 }: CardViewProps) {
-  const { radius, colors } = useTheme();
+  const { radius } = useTheme();
 
   if (!card) {
     return (
@@ -129,7 +129,7 @@ export function CardView({
         borderRadius: radius.sm,
         backgroundColor: theme.face,
         borderWidth: selected ? 3 : 1,
-        borderColor: selected ? colors.accent : theme.slot,
+        borderColor: selected ? theme.highlight : theme.slot,
         paddingHorizontal: 4,
         paddingTop: 2,
         overflow: "hidden",
