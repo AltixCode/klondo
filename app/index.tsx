@@ -19,7 +19,15 @@ import { BannerAdSlot } from "@/components/BannerAdSlot";
 import { CardView, rankLabel } from "@/components/CardView";
 import { Button, Screen, Text } from "@/components/ui";
 import { t, type TranslationKey } from "@/i18n";
-import { SUITS, type Card, type Suit, hasWon, canStackOnFoundation } from "@/logic/klondike";
+import {
+  SUITS,
+  type Card,
+  type Suit,
+  canAutoComplete,
+  canStackOnFoundation,
+  hasWon,
+  nextAutoCompleteAction,
+} from "@/logic/klondike";
 import { dateKey } from "@/logic/daily";
 import { FREE_HINTS, FREE_UNDO, useTableStore } from "@/store/useTableStore";
 import { usePremiumStore } from "@/store/usePremiumStore";
@@ -78,7 +86,8 @@ export default function Table() {
   // never shrinking, the screen around them was growing.
   const isTablet = width >= 700;
   const cardW = Math.floor(
-    (Math.min(width, isTablet ? 820 : 520) - spacing.xl * 2 - spacing.xs * 6) / 7,
+    (Math.min(width, isTablet ? 820 : 520) - spacing.xl * 2 - spacing.xs * 6) /
+      7,
   );
   const cardH = Math.round(cardW * 1.4);
   const fan = Math.round(cardH * 0.28);
@@ -97,37 +106,62 @@ export default function Table() {
     if (!game || announced.current || !hasWon(game)) return;
     announced.current = true;
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert(
-      t("wonTitle"),
-      t("wonBody", { moves: String(moves) }),
-      [
-        {
-          text: t("playAgainCta"),
-          onPress: doNewGame,
-        },
-      ],
-    );
+    Alert.alert(t("wonTitle"), t("wonBody", { moves: String(moves) }), [
+      {
+        text: t("playAgainCta"),
+        onPress: doNewGame,
+      },
+    ]);
   }, [game, moves, doNewGame]);
 
-  // When all cards in stock & waste are cleared, and all tableau cards are face up,
-  // automatically sort remaining cards to foundations one by one until completed.
+  const [autoCompleting, setAutoCompleting] = useState(false);
+  const autoCompleteStepsRef = useRef(0);
+
+  // Once every tableau card is face up there is nothing left to *decide* -- only cards left to
+  // walk to a foundation one at a time. That is exactly what a tester objected to: "instead of
+  // having to sort them one by one". `canAutoComplete` is the same "only foundation moves
+  // remain" condition every solitaire app uses to offer a one-tap finish.
+  const canFinish = !!game && !autoCompleting && canAutoComplete(game);
+
+  const doAutoComplete = useCallback(() => {
+    if (!canFinish) return;
+    autoCompleteStepsRef.current = 0;
+    setSelected(null);
+    setAutoCompleting(true);
+  }, [canFinish]);
+
+  // Plays out an automatic finish one action at a time, re-reading the store on every tick so
+  // it always acts on the latest state rather than a stale closure over `game`. The 80ms cadence
+  // matches the single-column auto-play this replaces, and the step ceiling is a defensive
+  // guard against a state `nextAutoCompleteAction` failed to reason about, not a tuned bound --
+  // a real deal finishes in well under it.
   useEffect(() => {
-    if (!game || hasWon(game)) return;
-    if (game.stock.length === 0 && game.waste.length === 0) {
-      const allFaceUp = game.tableau.every((col) => col.every((c) => c.faceUp));
-      if (allFaceUp) {
-        for (let col = 0; col < game.tableau.length; col++) {
-          const top = game.tableau[col]?.at(-1);
-          if (top && canStackOnFoundation(top, game.foundations[top.suit])) {
-            const timer = setTimeout(() => {
-              toFoundation({ from: "tableau", column: col });
-            }, 80);
-            return () => clearTimeout(timer);
-          }
-        }
+    if (!autoCompleting) return;
+    // Everything -- including the calls that stop the animation -- happens inside the timer
+    // callback, never synchronously in the effect body: a `setState` there would cascade
+    // straight into another render instead of giving the screen a frame to show the last move.
+    const timer = setTimeout(() => {
+      const current = useTableStore.getState().game;
+      if (!current || autoCompleteStepsRef.current > 300) {
+        setAutoCompleting(false);
+        return;
       }
-    }
-  }, [game, toFoundation]);
+      const action = nextAutoCompleteAction(current);
+      if (!action) {
+        setAutoCompleting(false);
+        return;
+      }
+      autoCompleteStepsRef.current += 1;
+      if (action.type === "foundation") toFoundation(action.source);
+      else if (action.type === "draw") draw(1);
+      else if (action.type === "recycle") recycle();
+      else {
+        const fromIndex = current.tableau[action.from]!.length - 1;
+        moveRun(action.from, action.to, fromIndex);
+      }
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [autoCompleting, game, toFoundation, draw, recycle, moveRun]);
 
   const offerUnlock = useCallback(() => {
     Alert.alert(t("limitTitle"), t("unlockBody"), [
@@ -136,7 +170,10 @@ export default function Table() {
     ]);
   }, [router]);
 
-  const lastTapRef = useRef<{ time: number; key: string }>({ time: 0, key: "" });
+  const lastTapRef = useRef<{ time: number; key: string }>({
+    time: 0,
+    key: "",
+  });
 
   const tryAutoMoveToFoundation = useCallback(
     (source: { from: "waste" } | { from: "tableau"; column: number }) => {
@@ -189,13 +226,17 @@ export default function Table() {
 
       if (!card?.faceUp) return;
 
-      // Check double tap or Ace if it's the top card:
+      // A double tap on the top card sends it straight to its foundation when that fits --
+      // every rank behaves the same way here, aces included. A single tap always selects, so
+      // the gesture is consistent no matter what card is under the finger: a tester flagged
+      // aces as the one card that moved on a single tap while everything else needed two.
       if (index === cards.length - 1) {
         const now = Date.now();
         const key = `col:${column}:${index}`;
-        const isDoubleTap = now - lastTapRef.current.time < 350 && lastTapRef.current.key === key;
+        const isDoubleTap =
+          now - lastTapRef.current.time < 350 && lastTapRef.current.key === key;
         lastTapRef.current = { time: now, key };
-        if (isDoubleTap || card.rank === 1) {
+        if (isDoubleTap) {
           if (tryAutoMoveToFoundation({ from: "tableau", column })) {
             return;
           }
@@ -230,7 +271,7 @@ export default function Table() {
         {/* topInset, because this route sets headerShown:false -- with no
           navigation header above it, nothing else pays the notch, and the
           title renders underneath the status bar. */}
-      <Screen topInset>
+        <Screen topInset>
           <Text variant="display">{t("appName")}</Text>
         </Screen>
         <BannerAdSlot />
@@ -305,7 +346,7 @@ export default function Table() {
                   now - lastTapRef.current.time < 350 &&
                   lastTapRef.current.key === key;
                 lastTapRef.current = { time: now, key };
-                if (isDoubleTap || wasteTop.rank === 1) {
+                if (isDoubleTap) {
                   if (tryAutoMoveToFoundation({ from: "waste" })) {
                     return;
                   }
@@ -352,7 +393,9 @@ export default function Table() {
                           ? { from: "waste" }
                           : { from: "tableau", column: selected.column },
                       );
-                      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      void Haptics.impactAsync(
+                        Haptics.ImpactFeedbackStyle.Light,
+                      );
                     }
                     setSelected(null);
                   }}
@@ -435,6 +478,16 @@ export default function Table() {
             ))}
           </View>
         </View>
+
+        {canFinish ? (
+          <Button
+            label={t("autoCompleteCta")}
+            variant="primary"
+            onPress={doAutoComplete}
+            fullWidth
+            style={{ marginTop: spacing.md }}
+          />
+        ) : null}
 
         <Text variant="micro" tone="faint" style={{ marginTop: spacing.sm }}>
           {t("selectHint")}

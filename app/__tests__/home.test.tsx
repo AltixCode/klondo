@@ -1,4 +1,4 @@
-import { fireEvent } from "@testing-library/react-native";
+import { act, fireEvent } from "@testing-library/react-native";
 import React from "react";
 import { Alert } from "react-native";
 
@@ -7,7 +7,7 @@ import { testRouter } from "./testRouter";
 import { renderWithProviders } from "@/components/__tests__/renderWithProviders";
 import { t } from "@/i18n";
 import { dateKey } from "@/logic/daily";
-import { RANKS, SUITS, type Card } from "@/logic/klondike";
+import { RANKS, SUITS, type Card, type GameState } from "@/logic/klondike";
 import { useAdsConsentStore } from "@/store/useAdsConsentStore";
 import { FREE_UNDO, useTableStore } from "@/store/useTableStore";
 import { usePremiumStore } from "@/store/usePremiumStore";
@@ -135,34 +135,179 @@ describe("the table", () => {
     expect(alert).not.toHaveBeenCalledWith(t("limitTitle"));
   });
 
-  it("auto-moves Ace to foundation on tap", async () => {
-    await renderWithProviders(<Home />);
-    useTableStore.setState({
-      game: {
-        stock: [],
-        waste: [{ rank: 1, suit: "hearts", faceUp: true }],
-        foundations: { hearts: [], diamonds: [], clubs: [], spades: [] },
-        tableau: [
-          [{ rank: 1, suit: "spades", faceUp: true }],
-          [],
-          [],
-          [],
-          [],
-          [],
-          [],
-        ],
-      },
-      moves: 5,
+  // A tester flagged this directly: a single tap sent an ace to its foundation while every
+  // other rank needed two taps -- "the action [should be] the same, so it's consistent and not
+  // confusing. Double tap." These lock in that aces now behave exactly like everything else.
+  describe("tap-to-foundation is consistent across ranks", () => {
+    const soloGame = (): GameState => ({
+      stock: [],
+      waste: [{ rank: 1, suit: "hearts", faceUp: true }],
+      foundations: { hearts: [], diamonds: [], clubs: [], spades: [] },
+      tableau: [
+        [{ rank: 1, suit: "spades", faceUp: true }],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+      ],
     });
-    const { getByLabelText, getByText } = await renderWithProviders(<Home />);
-    const aceHeart = getByLabelText(
-      t("wasteLabel", { card: `A ${t("suitHearts")}` }),
-    );
-    await fireEvent.press(aceHeart);
-    expect(useTableStore.getState().game!.foundations.hearts).toHaveLength(1);
 
-    // Also test "Play another game" button
-    await fireEvent.press(getByText(t("playAgainCta")));
-    expect(useTableStore.getState().game).toBeTruthy();
+    it("does not move an ace to its foundation on a single tap", async () => {
+      await renderWithProviders(<Home />);
+      useTableStore.setState({ game: soloGame(), moves: 5 });
+      const { getByLabelText } = await renderWithProviders(<Home />);
+      const aceHeart = getByLabelText(
+        t("wasteLabel", { card: `A ${t("suitHearts")}` }),
+      );
+      await fireEvent.press(aceHeart);
+      expect(useTableStore.getState().game!.foundations.hearts).toHaveLength(0);
+    });
+
+    it("moves an ace to its foundation on a double tap, same as any other rank", async () => {
+      await renderWithProviders(<Home />);
+      useTableStore.setState({ game: soloGame(), moves: 5 });
+      const { getByLabelText, getByText } = await renderWithProviders(<Home />);
+      const aceHeart = getByLabelText(
+        t("wasteLabel", { card: `A ${t("suitHearts")}` }),
+      );
+      await fireEvent.press(aceHeart);
+      await fireEvent.press(aceHeart);
+      expect(useTableStore.getState().game!.foundations.hearts).toHaveLength(1);
+
+      // Also test "Play another game" button
+      await fireEvent.press(getByText(t("playAgainCta")));
+      expect(useTableStore.getState().game).toBeTruthy();
+    });
+
+    it("moves a non-ace tableau card to its foundation on a double tap", async () => {
+      await renderWithProviders(<Home />);
+      useTableStore.setState({
+        game: {
+          stock: [],
+          waste: [],
+          foundations: {
+            hearts: [{ rank: 1, suit: "hearts", faceUp: true }],
+            diamonds: [],
+            clubs: [],
+            spades: [],
+          },
+          tableau: [
+            [{ rank: 2, suit: "hearts", faceUp: true }],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+          ],
+        },
+        moves: 5,
+      });
+      const { getByLabelText } = await renderWithProviders(<Home />);
+      const twoHearts = getByLabelText(
+        t("columnLabel", { n: "1", card: `2 ${t("suitHearts")}` }),
+      );
+      await fireEvent.press(twoHearts);
+      await fireEvent.press(twoHearts);
+      expect(useTableStore.getState().game!.foundations.hearts).toHaveLength(2);
+    });
+  });
+
+  describe("tapping a foundation pile", () => {
+    it("only accepts the selected card on the pile matching its suit", async () => {
+      await renderWithProviders(<Home />);
+      useTableStore.setState({
+        game: {
+          stock: [],
+          waste: [{ rank: 1, suit: "hearts", faceUp: true }],
+          foundations: { hearts: [], diamonds: [], clubs: [], spades: [] },
+          tableau: [[], [], [], [], [], [], []],
+        },
+        moves: 5,
+      });
+      const { getByLabelText } = await renderWithProviders(<Home />);
+      await fireEvent.press(
+        getByLabelText(t("wasteLabel", { card: `A ${t("suitHearts")}` })),
+      );
+      // The wrong-suit pile: tapping it must not accept the card.
+      await fireEvent.press(
+        getByLabelText(t("foundationEmpty", { suit: t("suitSpades") })),
+      );
+      expect(useTableStore.getState().game!.foundations.spades).toHaveLength(0);
+      expect(useTableStore.getState().game!.waste).toHaveLength(1);
+    });
+  });
+
+  describe("auto-complete", () => {
+    it("offers to finish once every tableau card is face up", async () => {
+      await renderWithProviders(<Home />);
+      useTableStore.setState({
+        game: {
+          stock: [],
+          waste: [],
+          foundations: { hearts: [], diamonds: [], clubs: [], spades: [] },
+          tableau: [
+            [{ rank: 6, suit: "spades", faceUp: true }],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+          ],
+        },
+        moves: 5,
+      });
+      const { queryByText } = await renderWithProviders(<Home />);
+      expect(queryByText(t("autoCompleteCta"))).toBeTruthy();
+    });
+
+    it("does not offer to finish while a tableau card is still face down", async () => {
+      const { queryByText } = await renderWithProviders(<Home />);
+      // The daily deal always has face-down cards at first.
+      expect(queryByText(t("autoCompleteCta"))).toBeNull();
+    });
+
+    it("plays a small deal out to a win when tapped", async () => {
+      jest.useFakeTimers();
+      await renderWithProviders(<Home />);
+      useTableStore.setState({
+        game: {
+          stock: [],
+          waste: [],
+          foundations: {
+            hearts: RANKS.slice(0, 12).map((rank) => ({
+              rank,
+              suit: "hearts" as const,
+              faceUp: true,
+            })),
+            diamonds: [],
+            clubs: [],
+            spades: [],
+          },
+          tableau: [
+            [{ rank: 13, suit: "hearts", faceUp: true }],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+          ],
+        },
+        moves: 5,
+      });
+      const { getByText } = await renderWithProviders(<Home />);
+      await fireEvent.press(getByText(t("autoCompleteCta")));
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(200);
+      });
+      expect(useTableStore.getState().game!.foundations.hearts).toHaveLength(
+        13,
+      );
+      jest.useRealTimers();
+    });
   });
 });
