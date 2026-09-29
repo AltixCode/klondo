@@ -215,11 +215,32 @@ export function hasWon(state: GameState): boolean {
 }
 
 /**
+ * Whether moving the single top card off `from` is worth doing when it does not uncover a
+ * face-down card underneath.
+ *
+ * Two cases: the source column empties outright (a spot opens for a king), or the card left
+ * exposed underneath is itself ready for its foundation. Either way the move is guaranteed
+ * progress, which is what keeps this from ever recommending -- or, in `findMove`'s case,
+ * spending a paid hint on -- a shuffle that just moves straight back.
+ */
+function isProductiveRelocation(state: GameState, from: number): boolean {
+  const column = state.tableau[from]!;
+  const rest = column.slice(0, -1);
+  const newTop = rest.at(-1);
+  if (!newTop) return true; // The column empties.
+  return canStackOnFoundation(newTop, state.foundations[newTop.suit]);
+}
+
+/**
  * A move a player could make right now, or null.
  *
- * Foundation moves first, then tableau moves that uncover a face-down card — the two that
- * actually make progress. A hint that suggests shuffling two exposed cards back and forth is
- * worse than no hint.
+ * Foundation moves first, then tableau moves that uncover a face-down card, then a plain
+ * top-card relocation that is still worth making even though nothing was hidden underneath it
+ * -- a lone exposed card sitting on a column of its own, sat right next to the column it could
+ * stack onto, is exactly the kind of move a hint exists to point at. `isProductiveRelocation`
+ * is what keeps that last tier from ever suggesting a move that just shuffles a card sideways
+ * for no reason: it only fires when relocating empties the source column or frees a card that
+ * can go straight to a foundation.
  */
 export function findMove(
   state: GameState,
@@ -258,5 +279,84 @@ export function findMove(
       }
     }
   }
+
+  // A card already fully exposed (nothing hidden below it) that can still usefully move --
+  // most often the single card dealt to a column, sitting there with a legal home elsewhere.
+  for (let from = 0; from < state.tableau.length; from += 1) {
+    const column = state.tableau[from]!;
+    const card = column.at(-1);
+    if (!card || !isProductiveRelocation(state, from)) continue;
+    for (let to = 0; to < state.tableau.length; to += 1) {
+      if (to === from) continue;
+      const fromIndex = column.length - 1;
+      if (moveTableauRun(state, from, to, fromIndex) !== state) {
+        return {
+          label: `tableau:${from}:${to}`,
+          apply: (s) => moveTableauRun(s, from, to, fromIndex),
+        };
+      }
+    }
+  }
+  return null;
+}
+
+/** Once every tableau card is face up, there is nothing left to discover: cycling stock and
+ * waste into the foundations, relocating an exposed card when it is blocking one, is always
+ * enough to finish the deal. That is the standard point at which solitaire apps offer to play
+ * the rest out automatically instead of making the player walk each card over by hand. */
+export function canAutoComplete(state: GameState): boolean {
+  if (hasWon(state)) return false;
+  return state.tableau.every((column) => column.every((c) => c.faceUp));
+}
+
+export type AutoCompleteAction =
+  | { type: "foundation"; source: Source }
+  | { type: "draw" }
+  | { type: "recycle" }
+  | { type: "tableau"; from: number; to: number };
+
+/**
+ * The single next step of an automatic finish, or `null` once there is nothing left to do
+ * (won, or -- defensively, since `canAutoComplete` is meant to rule this out -- genuinely
+ * stuck). Callers drive this in a loop, applying one action and asking again, which is what
+ * lets the screen animate the finish one card at a time instead of jumping straight to the
+ * win screen.
+ */
+export function nextAutoCompleteAction(
+  state: GameState,
+): AutoCompleteAction | null {
+  if (hasWon(state)) return null;
+
+  for (let column = 0; column < state.tableau.length; column += 1) {
+    const card = state.tableau[column]!.at(-1);
+    if (card && canStackOnFoundation(card, state.foundations[card.suit])) {
+      return { type: "foundation", source: { from: "tableau", column } };
+    }
+  }
+  const wasteCard = state.waste.at(-1);
+  if (
+    wasteCard &&
+    canStackOnFoundation(wasteCard, state.foundations[wasteCard.suit])
+  ) {
+    return { type: "foundation", source: { from: "waste" } };
+  }
+  if (state.stock.length > 0) return { type: "draw" };
+
+  // Stock is empty and nothing is foundation-ready. A card is blocking its own foundation --
+  // relocate it if that unblocks something, same rule as the hint's consolidation tier.
+  for (let from = 0; from < state.tableau.length; from += 1) {
+    const column = state.tableau[from]!;
+    const card = column.at(-1);
+    if (!card || !isProductiveRelocation(state, from)) continue;
+    for (let to = 0; to < state.tableau.length; to += 1) {
+      if (to === from) continue;
+      const target = state.tableau[to]!.at(-1) ?? null;
+      if (canStackOnTableau(card, target)) {
+        return { type: "tableau", from, to };
+      }
+    }
+  }
+
+  if (state.waste.length > 0) return { type: "recycle" };
   return null;
 }

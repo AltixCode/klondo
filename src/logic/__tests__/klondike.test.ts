@@ -3,16 +3,19 @@ import {
   type GameState,
   RANKS,
   SUITS,
+  canAutoComplete,
   canStackOnFoundation,
   canStackOnTableau,
   colourOf,
   deal,
   drawFromStock,
+  findMove,
   fullDeck,
   hasWon,
   moveToFoundation,
   moveTableauRun,
   newGame,
+  nextAutoCompleteAction,
   recycleWaste,
 } from "../klondike";
 
@@ -284,6 +287,271 @@ describe("moving to a foundation", () => {
       foundations: { hearts: [], diamonds: [], clubs: [], spades: [] },
     };
     expect(moveToFoundation(state, { from: "waste" })).toEqual(state);
+  });
+});
+
+describe("findMove — hints", () => {
+  it("finds a foundation move over anything else", () => {
+    const state: GameState = {
+      ...deal(rng(4)),
+      tableau: [[card(1, "hearts")], [], [], [], [], [], []],
+      foundations: { hearts: [], diamonds: [], clubs: [], spades: [] },
+      waste: [],
+      stock: [],
+    };
+    expect(findMove(state)?.label).toBe("foundation:0");
+  });
+
+  it("finds a tableau move that uncovers a hidden card", () => {
+    const state: GameState = {
+      ...deal(rng(4)),
+      tableau: [
+        [card(5, "clubs", false), card(7, "hearts")],
+        [card(8, "spades")],
+        [],
+        [],
+        [],
+        [],
+        [],
+      ],
+      foundations: { hearts: [], diamonds: [], clubs: [], spades: [] },
+      waste: [],
+      stock: [],
+    };
+    expect(findMove(state)?.label).toBe("tableau:0:1");
+  });
+
+  // A tester reported exactly this: a black 6 sitting alone on its own column, with a red 7
+  // exposed two columns over, and the hint button doing nothing about it. The old
+  // implementation only ever looked at tableau moves that uncovered a face-down card, so a
+  // card that was already fully exposed -- most often the single card dealt to a column --
+  // was invisible to it no matter how obviously it belonged somewhere else.
+  it("finds a move for a fully-exposed card with nothing left to uncover", () => {
+    const state: GameState = {
+      ...deal(rng(4)),
+      tableau: [
+        [card(6, "spades")], // Single card column: nothing hidden underneath.
+        [],
+        [],
+        [],
+        [],
+        [card(7, "hearts")],
+        [],
+      ],
+      foundations: { hearts: [], diamonds: [], clubs: [], spades: [] },
+      waste: [],
+      stock: [],
+    };
+    const move = findMove(state);
+    expect(move).not.toBeNull();
+    expect(move!.label).toBe("tableau:0:5");
+    const next = move!.apply(state);
+    expect(next.tableau[0]).toHaveLength(0);
+    expect(next.tableau[5]!.map((c) => `${c.rank}${c.suit}`)).toEqual([
+      "7hearts",
+      "6spades",
+    ]);
+  });
+
+  it("also finds it when the exposed card frees a foundation-ready card underneath", () => {
+    const state: GameState = {
+      ...deal(rng(4)),
+      tableau: [
+        // 9♠ sits on 10♥; 10♥ is ready for hearts the moment 9♠ leaves.
+        [card(10, "hearts"), card(9, "spades")],
+        [],
+        [],
+        [],
+        [card(10, "diamonds")],
+        [],
+        [],
+      ],
+      foundations: {
+        hearts: RANKS.slice(0, 9).map((r) => card(r, "hearts")),
+        diamonds: [],
+        clubs: [],
+        spades: [],
+      },
+      waste: [],
+      stock: [],
+    };
+    const move = findMove(state);
+    expect(move).not.toBeNull();
+    expect(move!.label).toBe("tableau:0:4");
+    const next = move!.apply(state);
+    expect(next.tableau[0]).toEqual([card(10, "hearts")]);
+  });
+
+  it("does not recommend shuffling an exposed card sideways for no reason", () => {
+    // 6♠ could legally sit on 7♥, but neither move frees anything -- the source column
+    // would still have a card in it, and nothing about it is foundation-ready. Recommending
+    // it would spend a hint on a move worth exactly as much as staying put.
+    const state: GameState = {
+      ...deal(rng(4)),
+      tableau: [
+        [card(3, "clubs"), card(6, "spades")],
+        [],
+        [],
+        [],
+        [],
+        [card(7, "hearts")],
+        [],
+      ],
+      foundations: { hearts: [], diamonds: [], clubs: [], spades: [] },
+      waste: [],
+      stock: [],
+    };
+    expect(findMove(state)).toBeNull();
+  });
+
+  it("returns null when the deal genuinely has no move", () => {
+    const state: GameState = {
+      ...deal(rng(4)),
+      tableau: [[], [], [], [], [], [], []],
+      foundations: { hearts: [], diamonds: [], clubs: [], spades: [] },
+      waste: [],
+      stock: [],
+    };
+    expect(findMove(state)).toBeNull();
+  });
+});
+
+describe("canAutoComplete", () => {
+  it("is false while any tableau card is still face down", () => {
+    expect(canAutoComplete(deal(rng(1)))).toBe(false);
+  });
+
+  it("is true once every tableau card is face up, stock and waste or not", () => {
+    const state: GameState = {
+      ...deal(rng(1)),
+      tableau: [[card(6, "spades")], [], [card(5, "hearts")], [], [], [], []],
+    };
+    expect(canAutoComplete(state)).toBe(true);
+  });
+
+  it("is false once the game is already won", () => {
+    const full = (suit: (typeof SUITS)[number]) =>
+      RANKS.map((r) => card(r, suit));
+    const state: GameState = {
+      ...deal(rng(1)),
+      tableau: [[], [], [], [], [], [], []],
+      foundations: {
+        hearts: full("hearts"),
+        diamonds: full("diamonds"),
+        clubs: full("clubs"),
+        spades: full("spades"),
+      },
+    };
+    expect(canAutoComplete(state)).toBe(false);
+  });
+});
+
+describe("nextAutoCompleteAction", () => {
+  const empty = (): GameState => ({
+    tableau: [[], [], [], [], [], [], []],
+    foundations: { hearts: [], diamonds: [], clubs: [], spades: [] },
+    stock: [],
+    waste: [],
+  });
+
+  it("returns null once the game is won", () => {
+    const full = (suit: (typeof SUITS)[number]) =>
+      RANKS.map((r) => card(r, suit));
+    expect(
+      nextAutoCompleteAction({
+        ...empty(),
+        foundations: {
+          hearts: full("hearts"),
+          diamonds: full("diamonds"),
+          clubs: full("clubs"),
+          spades: full("spades"),
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("prefers a ready tableau card over anything else", () => {
+    const state: GameState = {
+      ...empty(),
+      tableau: [[card(1, "hearts")], [], [], [], [], [], []],
+      stock: [card(1, "spades")],
+    };
+    expect(nextAutoCompleteAction(state)).toEqual({
+      type: "foundation",
+      source: { from: "tableau", column: 0 },
+    });
+  });
+
+  it("plays the waste top when no tableau card is ready", () => {
+    const state: GameState = { ...empty(), waste: [card(1, "hearts")] };
+    expect(nextAutoCompleteAction(state)).toEqual({
+      type: "foundation",
+      source: { from: "waste" },
+    });
+  });
+
+  it("draws when nothing is playable but the stock still has cards", () => {
+    const state: GameState = { ...empty(), stock: [card(9, "hearts")] };
+    expect(nextAutoCompleteAction(state)).toEqual({ type: "draw" });
+  });
+
+  it("relocates a blocking card once the stock is empty", () => {
+    const state: GameState = {
+      ...empty(),
+      tableau: [
+        [card(10, "hearts"), card(9, "spades")],
+        [],
+        [],
+        [],
+        [card(10, "diamonds")],
+        [],
+        [],
+      ],
+      foundations: {
+        hearts: RANKS.slice(0, 9).map((r) => card(r, "hearts")),
+        diamonds: [],
+        clubs: [],
+        spades: [],
+      },
+    };
+    expect(nextAutoCompleteAction(state)).toEqual({
+      type: "tableau",
+      from: 0,
+      to: 4,
+    });
+  });
+
+  it("recycles once the stock is empty and nothing else can move", () => {
+    const state: GameState = { ...empty(), waste: [card(9, "hearts")] };
+    expect(nextAutoCompleteAction(state)).toEqual({ type: "recycle" });
+  });
+
+  it("drives a fully face-up deal to completion", () => {
+    // Empty tableau (vacuously all-face-up) with a deliberately adversarial stock order:
+    // every suit is drawn king-first, ace-last, which forces at least one recycle per suit
+    // before any foundation move is possible at all.
+    let state: GameState = {
+      ...empty(),
+      stock: fullDeck(), // index 0 = hearts A..K ... index 51 = spades A..K; drawn from the end.
+    };
+    let steps = 0;
+    for (;;) {
+      const action = nextAutoCompleteAction(state);
+      if (!action) break;
+      steps += 1;
+      expect(steps).toBeLessThan(2000); // Termination guard, not a tuned bound.
+      if (action.type === "draw") state = drawFromStock(state, 1);
+      else if (action.type === "recycle") state = recycleWaste(state);
+      else if (action.type === "tableau")
+        state = moveTableauRun(
+          state,
+          action.from,
+          action.to,
+          state.tableau[action.from]!.length - 1,
+        );
+      else state = moveToFoundation(state, action.source);
+    }
+    expect(hasWon(state)).toBe(true);
   });
 });
 
